@@ -1,36 +1,89 @@
-pub mod BF {
+use std::error::Error;
+use crate::BF::BF::BFError;
 
-    #[derive(Debug)]
+pub mod BF {
+    use std::fmt;
+    use std::fmt::Formatter;
+
+    #[derive(Debug, Clone)]
     pub enum BFError {
         UnbalancedBrackets,
         NegativeArrayPointer,
-        LineReadFailed,
         NonASCIIChar,
+        InvalidInstructionIndex,
         InputFailed,
         OutputFailed
     }
 
-    pub fn run_bf(array: &mut Vec<i32>, mut array_index: usize, instructions: &str,
+    impl fmt::Display for BFError{
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+
+            let error_string = match self{
+                BFError::UnbalancedBrackets => {"UnbalancedBrackets"}
+                BFError::NegativeArrayPointer => {"NegativeArrayPointer"}
+                BFError::NonASCIIChar => {"NonASCIIChar"}
+                BFError::InvalidInstructionIndex => {"InvalidInstructionIndex"}
+                BFError::InputFailed => {"InputFailed"}
+                BFError::OutputFailed => {"OutputFailed"}
+            };
+            write!(f, "{}", error_string)
+        }
+    }
+
+
+    pub struct BFInterpreter{
+        pub array: Vec<u32>,
+        pub array_pointer: usize,
+
+        pub program: String,
+        pub program_index: usize,
+
+        pub input: fn() -> Result<String, BFError>,
+        pub output: fn(String) -> Result<(), BFError>
+    }
+
+    impl BFInterpreter{
+
+        pub fn run(&mut self) -> Result<(), BFError> {
+
+            run_bf(&mut self.array, self.array_pointer, &self.program,
+                   &self.input, &self.output, self.program_index)
+        }
+
+        pub fn exec_one(&mut self) -> Result<(), BFError> {
+
+
+            if let Some(instruction) = self.program.chars().nth(self.program_index){
+
+                (self.array_pointer, self.program_index) = exec_BF_instruction(&mut self.array, self.array_pointer, &self.program,
+                                    &self.input, &self.output, self.program_index, instruction)?;
+
+                Ok(())
+            } else {
+                Err(BFError::InvalidInstructionIndex)
+            }
+        }
+    }
+
+    pub fn run_bf(array: &mut Vec<u32>, mut array_index: usize, instructions: &str,
                   input: &fn() -> Result<String, BFError>,
-                  output: &fn(String) -> Result<(), BFError>)
+                  output: &fn(String) -> Result<(), BFError>, mut instruct_index: usize)
                   -> Result<(), BFError> {
-        let mut instruct_index: usize = 0;
 
         while array_index >= array.len() { array.push(0); } // make sure the index is valid
 
-        'parse_instruct: loop {
-            match instructions.chars().nth(instruct_index) {
+        while let Some(instruction) = instructions.chars().nth(instruct_index) {
 
-                Some(instruction) => {(array_index, instruct_index) = exec_instruction(
-                    array, array_index, instructions, input, output, instruct_index, instruction)?}
-                None => {break 'parse_instruct}
-            };
+            (array_index, instruct_index) = exec_BF_instruction(array, array_index, instructions,
+                                                             input, output, instruct_index,
+                                                             instruction)?;
+
             instruct_index += 1;
-        };
+        }
         Ok(())
     }
 
-    pub fn exec_instruction(array: &mut Vec<i32>, mut array_index: usize, instructions: &str,
+    pub fn exec_BF_instruction(array: &mut Vec<u32>, mut array_index: usize, instructions: &str,
                             input: &fn() -> Result<String, BFError>,
                             output: &fn(String) -> Result<(), BFError>,
                             mut instruct_index: usize, instruction: char)
@@ -65,8 +118,8 @@ pub mod BF {
 
             // input (,) and output (.)
             ',' => {
-                let char = input()?.chars().next().ok_or(BFError::LineReadFailed)?;
-                if char.is_ascii() { array[array_index] = char as u8 as i32 }
+                let char = input()?.chars().next().ok_or(BFError::InputFailed)?;
+                if char.is_ascii() { array[array_index] = char as u32 }
                 else { return Err(BFError::NonASCIIChar) }
             }
             '.' => {
@@ -110,7 +163,7 @@ fn main(){
     use std::fs::File;
     use std::io::prelude::*;
 
-    fn input() -> Result<String, BF::BFError>{
+    fn input() -> Result<String, BFError>{
 
         let mut line = String::new();
 
@@ -120,12 +173,12 @@ fn main(){
 
             Ok(_) => {Ok(line)}
 
-            Err(_) => {return Err(BF::BFError::LineReadFailed);}
+            Err(_) => {return Err(BFError::InputFailed);}
         }
 
     }
 
-    fn print(str: String) -> Result<(), BF::BFError>{
+    fn print(str: String) -> Result<(), BFError>{
         println!("{}",str);
         Ok(())
     }
@@ -137,8 +190,8 @@ fn main(){
     let mut array = vec![];
 
     match BF::run_bf(&mut array, 0, &contents,
-                     &(input as fn() -> Result<String, BF::BFError>),
-                     &(print as fn(String) -> Result<(), BF::BFError>)) {
+                     &(input as fn() -> Result<String, BFError>),
+                     &(print as fn(String) -> Result<(), BFError>), 0) {
         Ok(_) => {}
         Err(x) => {println!("Error: {:?}", x);}
     };
