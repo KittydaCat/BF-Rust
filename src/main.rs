@@ -2,6 +2,7 @@ mod bf;
 mod b_unf;
 
 use std::cell::RefCell;
+use std::fmt::format;
 use std::rc::Rc;
 
 use yew::prelude::*;
@@ -23,6 +24,7 @@ pub enum BFMsg {
     ExecuteOne,     // combine together?
     ExecuteAll,
     UpdateOutput(char),
+    UpdateInput,
     HandleError(BFError), // to func?
     Reset,
     GetInput,
@@ -30,14 +32,15 @@ pub enum BFMsg {
 
 #[derive(Default)]
 struct RefList{
-    edit_div: NodeRef,
+    program: NodeRef,
     input: NodeRef,
 }
 
 struct BFDisplay {
     interp: BFInterpreter,
     output: String,
-    input: Rc<RefCell<Option<char>>>,
+    input: String,
+    current_input: Rc<RefCell<Option<char>>>,
     refs: RefList,
 }
 
@@ -75,10 +78,12 @@ impl Component for BFDisplay{
         Self {
 
             //+++++[->++++++<]>+++. --> !
-            interp: BFInterpreter::new(String::new(), Box::new(input), Box::new(output)),
+            interp: BFInterpreter::new(String::new(),
+                                       Box::new(input), Box::new(output)),
 
-            output: "".to_string(),
-            input: input_val,
+            output: String::new(),
+            input: String::new(),
+            current_input: input_val,
             refs: Default::default(),
         }
     }
@@ -90,14 +95,14 @@ impl Component for BFDisplay{
         match msg{
 
             BFMsg::ProgramUpdated => {
-                let program = &self.refs.edit_div;
+                let program = &self.refs.program;
                 let x = program.cast::<HtmlDivElement>().expect("").inner_text();
                 self.interp.program = x;
-                // link.callback(move |_| BFMsg::Reset).emit(());
             }
             BFMsg::LabelProgram => {
 
-                let program_input = &self.refs.edit_div.cast::<HtmlDivElement>().unwrap();
+                let program_input = self.refs.program.cast::<HtmlDivElement>()
+                    .expect("Program element not found");
 
                 program_input.set_inner_html(&*self.interp.program.chars().enumerate().map(|(i, x)|{
 
@@ -108,6 +113,7 @@ impl Component for BFDisplay{
 
                     else { escaped_str }}).collect::<String>());
             }
+
             BFMsg::ExecuteOne => {
 
                 if let Err(err) = self.interp.exec_one(){
@@ -127,26 +133,63 @@ impl Component for BFDisplay{
 
             BFMsg::UpdateOutput(char) => {self.output.push(char)}
 
+            BFMsg::UpdateInput => {
+
+                self.input = self.refs.input.cast::<HtmlDivElement>()
+                    .expect("Expected Input Element").inner_text();
+            }
+
             BFMsg::HandleError(err) => {
 
                 match err {
 
-                    _ => {log(&format!("{:?}", err))}
+                    BFError::InputFailed =>{
+
+                        match *self.current_input.borrow(){
+                            None => {
+                                log("Input fail with none in the current input")
+                            }
+                            Some(char) => {
+                                log(&format!("Input fail with {char} in the current input"))
+                            }
+                        }
+                    }
+
+                    _ => {panic!("{:?}", err)}
                 }
 
             }
             BFMsg::Reset => {
+
                 self.interp.program_index = 0;
                 self.interp.array = vec![0_u32];
                 self.interp.array_pointer = 0;
                 self.output.clear();
                 link.send_message(BFMsg::LabelProgram);
+
             }
             BFMsg::GetInput => {
 
-                let input = (&self.refs.input).cast::<HtmlInputElement>().unwrap();
+                let input = (&self.refs.input).cast::<HtmlDivElement>()
+                    .expect("Could not find div element");
 
-                input.value()
+                log(&input.inner_text());
+
+                self.current_input.replace(input.inner_text().chars().next());
+
+                // input.set_inner_html(&*self.input.chars().skip(1).enumerate().map(|(i, x)|{
+                //
+                //     let escaped_str = encode_minimal(&x.to_string());
+                //
+                //     if i == 0{
+                //         format!(r#"<span style="color: red">{escaped_str}</span>"#)}
+                //
+                //     else { escaped_str }}).collect::<String>());
+
+                input.set_inner_text(&*input.inner_text()
+                    .chars().skip(1).collect::<String>());
+
+
             }
         };
 
@@ -173,15 +216,17 @@ impl Component for BFDisplay{
             // <textarea rows="10" cols="30" placeholder="Your BF program" ref={&self.refs.textarea}
             // oninput={link.callback(|_| BFMsg::ProgramUpdated)}/><br/>
 
-            <div contenteditable="true" style="border:1px solid black;" ref={&self.refs.edit_div}
-            oninput={link.callback(|_| BFMsg::ProgramUpdated)}/>
+            <div contenteditable="true" style="border:1px solid black;" ref={&self.refs.program}
+            onblur={link.callback(|_| BFMsg::ProgramUpdated)}/>
             // style="height: 200px"
 
             <button type="button" onclick={link.callback(|_| BFMsg::ExecuteOne)}>{">"}</button>
             <button type="button" onclick={link.callback(|_| BFMsg::ExecuteAll)}>{">>"}</button>
             <button type="button" onclick={link.callback(|_| BFMsg::Reset)}>{"Reset"}</button><br/>
 
-            <input placeholder="Input" ref={&self.refs.input}/><br/>
+            <lable>{"Input:"}</lable><br/>
+            <div contenteditable="true" style="border:1px solid black;" ref={&self.refs.input}
+            onblur={link.callback(|_| BFMsg::UpdateInput)}/>
 
             // <p>{"Current program:"}</p>
             // <p> {self.interp.program.chars().take(self.interp.program_index).collect::<String>()}
